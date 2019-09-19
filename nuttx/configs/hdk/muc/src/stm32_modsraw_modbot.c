@@ -71,15 +71,28 @@ static int8_t cur_right = MOTOR_STOP;
 
 static bool modbot_started = false;
 
-//static int motor_config[][] = {{GPIO_MODBOT_AIN1, GPIO_MODBOT_AIN2} , {GPIO_MODBOT_BIN1, GPIO_MODBOT_BIN2}};
-static int motor_config_forward[] = {GPIO_MODBOT_AIN1, GPIO_MODBOT_BIN1};
-static int motor_config_backward[] = {GPIO_MODBOT_AIN2, GPIO_MODBOT_BIN2};
+static int motor_config_forward[] = {GPIO_MODBOT_BIN2, GPIO_MODBOT_AIN2};
+static int motor_config_backward[] = {GPIO_MODBOT_BIN1, GPIO_MODBOT_AIN1};
 static int motor_timer_num[] = {PWM_TIM_LEFT, PWM_TIM_RIGHT};
-static int motor_period[] = {1000, 1000};
-static int motor_freq[] = {1000, 1000};
+static int motor_period[] = {1, 1};
+static int motor_freq[] = {100, 100};
+
+//motor can go lower than this, but will stall
+//static int MAX_FREQ = 8000;
+#define FREQ_MIN 100
+#define FREQ_MAX 8000
 
 static struct stm32_tim_dev_s *tim_dev_left;
 static struct stm32_tim_dev_s *tim_dev_right;
+
+static int map(int value, int low1, int high1, int low2, int high2){
+    int mappedValue = low2 + (value - low1) * (high2 - low2) / (high1 - low1);
+    if(mappedValue > high2)
+        mappedValue = high2;
+    if(mappedValue < low2)
+        mappedValue = low2;
+    return mappedValue;
+}
 
 static int motor_left_timer_handler(int irq, FAR void *context)
 {
@@ -88,10 +101,21 @@ static int motor_left_timer_handler(int irq, FAR void *context)
     pm_activity(BLINKY_ACTIVITY);
     STM32_TIM_ACKINT(tim_dev_left, 0);
 
-    new_val = gpio_get_value(motor_config_forward[0]) ^ 1;
-    gpio_set_value(motor_config_forward[0], new_val);
-
-    //llvdbg("new_val=%d\n", new_val);
+    if(cur_left > 0){
+        new_val = gpio_get_value(motor_config_forward[PWM_L]) ^ 1;
+        gpio_set_value(motor_config_forward[PWM_L], new_val);
+        gpio_set_value(motor_config_backward[PWM_L], 0);
+    }
+    else if(cur_left < 0){
+        new_val = gpio_get_value(motor_config_backward[PWM_L]) ^ 1;
+        gpio_set_value(motor_config_backward[PWM_L], new_val);
+        gpio_set_value(motor_config_forward[PWM_L], 0);
+    }
+    else{
+        //failsafe I guess
+        gpio_set_value(motor_config_forward[PWM_L], 0);
+        gpio_set_value(motor_config_backward[PWM_L], 0);
+    }
     return 0;
 }
 
@@ -102,10 +126,21 @@ static int motor_right_timer_handler(int irq, FAR void *context)
     pm_activity(BLINKY_ACTIVITY);
     STM32_TIM_ACKINT(tim_dev_right, 0);
 
-    new_val = gpio_get_value(motor_config_forward[1]) ^ 1;
-    gpio_set_value(motor_config_forward[1], new_val);
-
-    //llvdbg("new_val=%d\n", new_val);
+    if(cur_right > 0){ //NOTE: Swapped since one motor reversed
+        new_val = gpio_get_value(motor_config_backward[PWM_R]) ^ 1;
+        gpio_set_value(motor_config_backward[PWM_R], new_val);
+        gpio_set_value(motor_config_forward[PWM_R], 0);
+    }
+    else if(cur_right < 0){
+        new_val = gpio_get_value(motor_config_forward[PWM_R]) ^ 1;
+        gpio_set_value(motor_config_forward[PWM_R], new_val);
+        gpio_set_value(motor_config_backward[PWM_R], 0);
+    }
+    else{
+        //failsafe I guess
+        gpio_set_value(motor_config_forward[PWM_R], 0);
+        gpio_set_value(motor_config_backward[PWM_R], 0);
+    }
     return 0;
 }
 
@@ -138,10 +173,10 @@ static void modbot_stop(void)
     }
 
     gpio_set_value(GPIO_MODBOT_STANDBY, 0);
-    gpio_set_value(motor_config_forward[0], 0);
-    gpio_set_value(motor_config_forward[1], 0);
-    gpio_set_value(motor_config_backward[0], 0);
-    gpio_set_value(motor_config_backward[1], 0);
+    gpio_set_value(motor_config_forward[PWM_L], 0);
+    gpio_set_value(motor_config_forward[PWM_R], 0);
+    gpio_set_value(motor_config_backward[PWM_L], 0);
+    gpio_set_value(motor_config_backward[PWM_R], 0);
 }
 
 // modbot_start will enable PWM signal generation and bring the 
@@ -162,7 +197,7 @@ static void modbot_start(void)
 
         STM32_TIM_SETPERIOD(tim_dev_left, motor_period[0]);
         STM32_TIM_SETCLOCK(tim_dev_left, motor_freq[0]);
-        STM32_TIM_SETMODE(tim_dev_left, STM32_TIM_MODE_PULSE);
+        STM32_TIM_SETMODE(tim_dev_left, STM32_TIM_MODE_UPDOWN);
         STM32_TIM_SETISR(tim_dev_left, motor_left_timer_handler, 0);
         STM32_TIM_ENABLEINT(tim_dev_left, 0);
     } else {
@@ -178,7 +213,7 @@ static void modbot_start(void)
 
         STM32_TIM_SETPERIOD(tim_dev_right, motor_period[1]);
         STM32_TIM_SETCLOCK(tim_dev_right, motor_freq[1]);
-        STM32_TIM_SETMODE(tim_dev_right, STM32_TIM_MODE_PULSE);
+        STM32_TIM_SETMODE(tim_dev_right, STM32_TIM_MODE_UPDOWN);
         STM32_TIM_SETISR(tim_dev_right, motor_right_timer_handler, 0);
         STM32_TIM_ENABLEINT(tim_dev_right, 0);
     } else {
@@ -188,10 +223,10 @@ static void modbot_start(void)
     modbot_started = success;
     if (success) {
         gpio_set_value(GPIO_MODBOT_STANDBY, 1);
-        gpio_set_value(motor_config_forward[0], 0);
-        gpio_set_value(motor_config_forward[1], 0);
-        gpio_set_value(motor_config_backward[0], 0);
-        gpio_set_value(motor_config_backward[1], 0);
+        gpio_set_value(motor_config_forward[PWM_L], 0);
+        gpio_set_value(motor_config_forward[PWM_R], 0);
+        gpio_set_value(motor_config_backward[PWM_L], 0);
+        gpio_set_value(motor_config_backward[PWM_R], 0);
     } else {
         // Some error occurred, reset all to stopped state
         modbot_stop();
@@ -223,27 +258,28 @@ static int modbot_recv(struct device *dev, uint32_t len, uint8_t data[])
             uval = 100;
         }
         if (uval != 0) {
-            //pwm_info[i].duty = uitoub16(uval)/100;
-            //ioctl(pwm_fd[i], PWMIOC_SETCHARACTERISTICS,
-            //        (unsigned long)&pwm_info[i]);
+            motor_freq[i] = map(uval, 100, 0, FREQ_MIN, FREQ_MAX);
         }
+    }
+
+    if(tim_dev_right){
+        STM32_TIM_SETPERIOD(tim_dev_right, motor_period[PWM_R]);
+        STM32_TIM_SETCLOCK(tim_dev_right, motor_freq[PWM_R]);
+    }
+
+    if(tim_dev_left){
+        STM32_TIM_SETPERIOD(tim_dev_left, motor_period[PWM_L]);
+        STM32_TIM_SETCLOCK(tim_dev_left, motor_freq[PWM_L]);
     }
 
     if (sdata[PWM_L] != cur_left) {
         cur_left = sdata[PWM_L];
         if (cur_left > 0) {                     // Forward
             vdbg("Left Forward: %d\n", cur_left);
-            // gpio_set_value(GPIO_MODBOT_AIN1, 0);  /* Motors wired backwards! */
-            // gpio_set_value(GPIO_MODBOT_AIN2, 1);
         } else if (cur_left < 0) {           // Backward
             vdbg("Left Backward: %d\n", cur_left);
-            // gpio_set_value(GPIO_MODBOT_AIN2, 0);
-            // gpio_set_value(GPIO_MODBOT_AIN1, 1);
         } else {                                // Stop
             vdbg("Left Stop: %d\n", cur_left);
-            // gpio_set_value(GPIO_MODBOT_AIN1, 0);  /* 0/0 will coast */  
-            // gpio_set_value(GPIO_MODBOT_AIN2, 0);  /* 1/1 will brake hard */
-
         }
     }
 
@@ -251,16 +287,10 @@ static int modbot_recv(struct device *dev, uint32_t len, uint8_t data[])
         cur_right = sdata[PWM_R];
         if (cur_right > 0) {                  // Forward
             vdbg("Right Forward: %d\n", cur_right);
-            // gpio_set_value(GPIO_MODBOT_BIN1, 0);  /* Motors wired backwards! */
-            // gpio_set_value(GPIO_MODBOT_BIN2, 1);
         } else if (cur_right < 0) {           // Backward
             vdbg("Right Backward: %d\n", cur_right);
-            // gpio_set_value(GPIO_MODBOT_BIN2, 0);
-            // gpio_set_value(GPIO_MODBOT_BIN1, 1);
         } else {                                // Stop
             vdbg("Right Stop: %d\n", cur_right);
-            // gpio_set_value(GPIO_MODBOT_BIN1, 0);  /* 0/0 will coast */  
-            // gpio_set_value(GPIO_MODBOT_BIN2, 0);  /* 1/1 will brake hard */
         }
     }
 
@@ -297,23 +327,6 @@ static int modbot_probe(struct device *dev)
     gpio_set_value(motor_config_forward[1], 0);
     gpio_set_value(motor_config_backward[0], 0);
     gpio_set_value(motor_config_backward[1], 0);
-
-    // for (i = 0; i < PWM_DEVICES; i++) {
-    //     if (!pwm[i]) {
-    //         dbg("Creating pwm %d\n",i);
-    //         pwm[i] = stm32_pwminitialize(pwm_tim[i]);
-    //         if (!pwm[i]) {
-    //             dbg("Failed to get the STM32 PWM %d lower half\n",i);
-    //             return -ENODEV;
-    //         }
-    //         ret = pwm_register(pwm_devices[i], pwm[i]);
-    //         if (ret < 0) {
-    //             adbg("pwm_register %d failed: %d\n",i, ret);
-    //             pwm[i] = NULL;
-    //             return ret;
-    //         }
-    //     }
-    // }
 
     // User exercise.  Delay calling modbot_start() until the Mod is
     // attached to the Moto Z.  See mods_attach_register().
