@@ -58,3 +58,12 @@ protocol = 0xfe
 ; RAW Bundle 3
 [bundle-descriptor 3]
 class = 0xfe
+
+; Camera on CPort 4
+[cport-descriptor 4]
+bundle = 3
+protocol = 0xed
+
+; Camera related Bundle 3
+[bundle-descriptor 3]
+class = 0x0d
