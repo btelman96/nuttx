@@ -74,25 +74,25 @@ static bool modbot_started = false;
 static int motor_config_forward[] = {GPIO_MODBOT_BIN2, GPIO_MODBOT_AIN2};
 static int motor_config_backward[] = {GPIO_MODBOT_BIN1, GPIO_MODBOT_AIN1};
 static int motor_timer_num[] = {PWM_TIM_LEFT, PWM_TIM_RIGHT};
-static int motor_period[] = {1, 1};
-static int motor_freq[] = {100, 100};
+static int motor_period[] = {20000, 20000};
+static int motor_freq[] = {1500, 1500};
 
 //motor can go lower than this, but will stall
 //static int MAX_FREQ = 8000;
-#define FREQ_MIN 100
-#define FREQ_MAX 8000
+#define FREQ_MIN 1280
+#define FREQ_MAX 1720
 
 static struct stm32_tim_dev_s *tim_dev_left;
 static struct stm32_tim_dev_s *tim_dev_right;
 
-static int map(int value, int low1, int high1, int low2, int high2){
-    int mappedValue = low2 + (value - low1) * (high2 - low2) / (high1 - low1);
-    if(mappedValue > high2)
-        mappedValue = high2;
-    if(mappedValue < low2)
-        mappedValue = low2;
-    return mappedValue;
-}
+// static int map(int value, int low1, int high1, int low2, int high2){
+//     int mappedValue = low2 + (value - low1) * (high2 - low2) / (high1 - low1);
+//     if(mappedValue > high2)
+//         mappedValue = high2;
+//     if(mappedValue < low2)
+//         mappedValue = low2;
+//     return mappedValue;
+// }
 
 static int motor_left_timer_handler(int irq, FAR void *context)
 {
@@ -127,14 +127,14 @@ static int motor_right_timer_handler(int irq, FAR void *context)
     STM32_TIM_ACKINT(tim_dev_right, 0);
 
     if(cur_right > 0){ //NOTE: Swapped since one motor reversed
-        new_val = gpio_get_value(motor_config_backward[PWM_R]) ^ 1;
-        gpio_set_value(motor_config_backward[PWM_R], new_val);
-        gpio_set_value(motor_config_forward[PWM_R], 0);
+        new_val = gpio_get_value(motor_config_forward[PWM_R]) ^ 1;
+        gpio_set_value(motor_config_forward[PWM_R], new_val);
+        // gpio_set_value(motor_config_forward[PWM_R], 0);
     }
     else if(cur_right < 0){
         new_val = gpio_get_value(motor_config_forward[PWM_R]) ^ 1;
         gpio_set_value(motor_config_forward[PWM_R], new_val);
-        gpio_set_value(motor_config_backward[PWM_R], 0);
+        // gpio_set_value(motor_config_backward[PWM_R], 0);
     }
     else{
         //failsafe I guess
@@ -258,7 +258,7 @@ static int modbot_recv(struct device *dev, uint32_t len, uint8_t data[])
             uval = 100;
         }
         if (uval != 0) {
-            motor_freq[i] = map(uval, 100, 0, FREQ_MIN, FREQ_MAX);
+            motor_freq[i] = 2000;
         }
     }
 
