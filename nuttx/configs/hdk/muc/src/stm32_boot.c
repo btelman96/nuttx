@@ -105,6 +105,13 @@ static const struct board_gpio_cfg_s board_gpio_cfgs[] =
   { GPIO_MODBOT_BIN1,        (GPIO_PUSHPULL)              },
   { GPIO_MODBOT_BIN2,        (GPIO_PUSHPULL)              },
 #endif
+#ifdef CONFIG_MODS_MODBOT_BTELMAN96
+  { GPIO_MODBOT_STANDBY,     (GPIO_PUSHPULL)              },
+  { GPIO_MODBOT_AIN1,        (GPIO_PUSHPULL)              },
+  { GPIO_MODBOT_AIN2,        (GPIO_PUSHPULL)              },
+  { GPIO_MODBOT_BIN1,        (GPIO_PUSHPULL)              },
+  { GPIO_MODBOT_BIN2,        (GPIO_PUSHPULL)              },
+#endif
 };
 
 #ifdef CONFIG_BATTERY_MAX17050
@@ -520,6 +527,14 @@ static struct device devices[] = {
     },
 #endif
 #ifdef CONFIG_MODS_MODBOT
+    {
+        .type = DEVICE_TYPE_RAW_HW,
+        .name = "mods_raw_modbot",
+        .desc = "ModBot Raw Interface",
+        .id   = 0,
+    },
+#endif
+#ifdef CONFIG_MODS_MODBOT_BTELMAN96
     {
         .type = DEVICE_TYPE_RAW_HW,
         .name = "mods_raw_modbot",
@@ -1071,6 +1086,10 @@ void board_initialize(void)
   device_register_driver(&mods_raw_temperature_driver);
 #endif
 #ifdef CONFIG_MODS_MODBOT
+  extern struct device_driver mods_raw_modbot_driver;
+  device_register_driver(&mods_raw_modbot_driver);
+#endif
+#ifdef CONFIG_MODS_MODBOT_BTELMAN96
   extern struct device_driver mods_raw_modbot_driver;
   device_register_driver(&mods_raw_modbot_driver);
 #endif

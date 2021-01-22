@@ -77,6 +77,10 @@ ifeq ($(CONFIG_MODS_MODBOT),y)
 CSRCS += stm32_modsraw_modbot.c
 endif
 
+ifeq ($(CONFIG_MODS_MODBOT_BTELMAN96),y)
+CSRCS += stm32_modsraw_modbot_btelman96.c
+endif
+
 ifeq ($(CONFIG_MODS_RAW_TERMAPP),y)
 CSRCS += stm32_modsraw_termapp.c
 endif
