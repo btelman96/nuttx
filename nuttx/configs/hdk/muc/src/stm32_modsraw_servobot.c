@@ -66,20 +66,20 @@
 #define BLINKY_ACTIVITY    10
 
 static int8_t cur_left = MOTOR_STOP;
-// static int8_t cur_right = MOTOR_STOP;
+static int8_t cur_right = MOTOR_STOP;
 
 //for 50hz
 #define DUTY_CYCLE_MIN 4194//1280ms roughly
 #define DUTY_CYCLE_MAX 5636 //1720ms roughly
 
 static bool modbot_started = false;
-//Pins on Pi hat 6, 4
-struct pwm_info_s pwm_info_left;
 int fd_left;
+int fd_right;
 static int motor_config[] = {GPIO_MODBOT_SERVO_AIN, GPIO_MODBOT_SERVO_BIN};
 static int motor_duty[] = {DUTY_CYCLE_MIN, DUTY_CYCLE_MIN};
 
 static struct pwm_lowerhalf_s *pwm_dev_left;
+static struct pwm_lowerhalf_s *pwm_dev_right;
 
 static int map(int value, int low1, int high1, int low2, int high2){
     int mappedValue = low2 + (value - low1) * (high2 - low2) / (high1 - low1);
@@ -106,45 +106,9 @@ static int map(int value, int low1, int high1, int low2, int high2){
  *   examples/pwm.
  *
  ************************************************************************************/
-static int pwm_enable(unsigned int pwm_id, uint8_t duty);
+static int pwm_enable(unsigned int pwm_id, uint8_t duty, bool reverse);
 static void pwm_disable(int fd);
-
-int pwm_devinit(void)
-{
-  static bool initialized = false;
-  struct pwm_lowerhalf_s *pwm;
-  int ret;
-
-  /* Have we already initialized? */
-
-  if (!initialized)
-    {
-      /* Call stm32_pwminitialize() to get an instance of the PWM interface */
-
-      pwm = stm32_pwminitialize(2);
-      if (!pwm)
-        {
-          dbg("Failed to get the STM32 PWM lower half\n");
-          return -ENODEV;
-        }
-
-      /* Register the PWM driver at "/dev/pwm0" */
-
-      ret = pwm_register("/dev/pwm0", pwm);
-      if (ret < 0)
-        {
-          adbg("pwm_register failed: %d\n", ret);
-          return ret;
-        }
-
-      /* Now we are initialized */
-
-      initialized = true;
-      pwm_dev_left = pwm;
-    }
-
-  return OK;
-}
+static int pwm_devinit(void);
 
 // modbot_stop will stop the PWM signal generation and place the motor driver
 // in standby.  This should be called to disable the motors
@@ -168,6 +132,20 @@ static void modbot_stop(void)
         dbg("ignore\n");
     }
 
+    if (pwm_dev_right) {
+        dbg("STOP\n");
+
+        // STM32_TIM_DISABLEINT(tim_dev_left, 0);
+        // stm32_tim_deinit(tim_dev_left);
+        if(fd_right){
+            pwm_disable(fd_right);
+            fd_right = 0;
+        }
+        pwm_dev_right = NULL;
+    } else {
+        dbg("ignore\n");
+    }
+
     gpio_set_value(GPIO_MODBOT_STANDBY, 0);
     gpio_set_value(motor_config[PWM_L], 0);
     gpio_set_value(motor_config[PWM_R], 0);
@@ -180,20 +158,9 @@ static void modbot_start(void)
     bool success = true;
 
     gpio_set_value(GPIO_MODS_DEMO_ENABLE, 1);
-    
-
-    if (!pwm_dev_left) {
-        dbg("LEFT\n");
-        int ret = pwm_devinit();
-        // fd_left = pwm_enable(0, 0);
-        // pwm_info_left.frequency = 50; /* 50hz */
-        // pwm_info_left.duty = 4915;       /* Approximately 1.5ms for duty cycle. Full stop: subject to rounding errors */
-        // int ret = pwm_start(pwm_dev_left, pwm_info_left);
-        if(ret < 0){
-            dbg("Failed to start timer\n");
-        }
-    } else {
-        dbg("ignore\n");
+    int ret = pwm_devinit(); //register both PWM channels. One for right, and one for left
+    if(ret < 0){
+        dbg("Failed to start timers\n");
     }
 
     modbot_started = success;
@@ -235,15 +202,23 @@ static int modbot_recv(struct device *dev, uint32_t len, uint8_t data[])
             uval = 100;
         }
         if (uval != 0) {
-            motor_duty[PWM_L] = uval;
+            motor_duty[i] = uval;
         }
     }
     dbg("Value: %d\n", uval);
 
     if(pwm_dev_left){
         dbg("pwm_dev_left modify\n");
-        pwm_disable(fd_left);
-        fd_left = pwm_enable(0, uval);
+        if(fd_left)
+            pwm_disable(fd_left);
+        fd_left = pwm_enable(0, uval, false);
+    }
+
+    if(pwm_dev_right){
+        dbg("pwm_dev_right modify\n");
+        if(fd_right)
+            pwm_disable(fd_right);
+        fd_right = pwm_enable(1, uval, true);
     }
 
     if (sdata[PWM_L] != cur_left) {
@@ -254,6 +229,17 @@ static int modbot_recv(struct device *dev, uint32_t len, uint8_t data[])
             dbg("Left Backward: %d\n", cur_left);
         } else {                                // Stop
             dbg("Left Stop: %d\n", cur_left);
+        }
+    }
+
+    if (sdata[PWM_R] != cur_right) {
+        cur_right = sdata[PWM_R];
+        if (cur_right > 0) {                     // Forward
+            dbg("Right Forward: %d\n", cur_right);
+        } else if (cur_right < 0) {           // Backward
+            dbg("Right Backward: %d\n", cur_right);
+        } else {                                // Stop
+            dbg("Right Stop: %d\n", cur_right);
         }
     }
     return 0;
@@ -315,15 +301,71 @@ struct device_driver mods_raw_servobot_driver = {
     .ops = &modbot_driver_ops,
 };
 
-// static int fd;
+int pwm_devinit(void)
+{
+  static bool initialized = false;
+  struct pwm_lowerhalf_s *pwm0;
+  struct pwm_lowerhalf_s *pwm1;
+  int ret;
+
+  /* Have we already initialized? */
+
+  if (!initialized)
+    {
+      /* Call stm32_pwminitialize() to get an instance of the PWM interface */
+
+      pwm0 = stm32_pwminitialize(2);
+      if (!pwm0)
+        {
+            dbg("Failed to get the STM32 PWM lower half 0\n");
+            return -ENODEV;
+        }
+
+      pwm1 = stm32_pwminitialize(5);
+      if (!pwm1)
+        {
+            dbg("Failed to get the STM32 PWM lower half 1\n");
+            return -ENODEV;
+        }
+
+      /* Register the PWM driver at "/dev/pwm0" */
+
+      ret = pwm_register("/dev/pwm0", pwm0);
+      if (ret < 0)
+        {
+          adbg("pwm_register0 failed: %d\n", ret);
+          return ret;
+        }
+      ret = pwm_register("/dev/pwm1", pwm1);
+      if (ret < 0)
+        {
+          adbg("pwm_register1 failed: %d\n", ret);
+          return ret;
+        }
+
+      /* Now we are initialized */
+
+      initialized = true;
+      pwm_dev_left = pwm0;
+      pwm_dev_right = pwm1;
+    }
+
+  return OK;
+}
 
 /*
  * Returns a file descriptor for the PWM device that was opened and enabled,
  * or a negative value if an error occurred.
  * Disabling pwm is not necessary after a negative return.
  */
-static int pwm_enable(unsigned int pwm_id, uint8_t duty) {
-    ub16_t dutyScale = (ub16_t) map(duty, 0, 100, DUTY_CYCLE_MIN, DUTY_CYCLE_MAX);
+static int pwm_enable(unsigned int pwm_id, uint8_t duty, bool reverse) {
+    ub16_t dutyScale;
+    if(!reverse){
+        dutyScale = (ub16_t) map(duty, 0, 100, DUTY_CYCLE_MIN, DUTY_CYCLE_MAX);
+    }
+    else{
+        dutyScale = (ub16_t) map(100-duty, 0, 100, DUTY_CYCLE_MIN, DUTY_CYCLE_MAX);
+    }
     struct pwm_info_s pwm_info;
     int ret;
     char *pwm_name;

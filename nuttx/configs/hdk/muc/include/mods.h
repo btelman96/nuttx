@@ -143,8 +143,8 @@
 #define GPIO_MODBOT_BIN1         CALC_GPIO_NUM('A', 4)
 #define GPIO_MODBOT_BIN2         CALC_GPIO_NUM('A', 5)
 /* SERVO MODBOT */
-#define GPIO_MODBOT_SERVO_AIN         CALC_GPIO_NUM('B', 10)
-#define GPIO_MODBOT_SERVO_BIN         CALC_GPIO_NUM('B', 11)
+#define GPIO_MODBOT_SERVO_AIN         CALC_GPIO_NUM('A', 2)
+#define GPIO_MODBOT_SERVO_BIN         CALC_GPIO_NUM('A', 3)
 
 static inline void mods_rfr_init(void)
 {
