@@ -361,10 +361,10 @@ int pwm_devinit(void)
 static int pwm_enable(unsigned int pwm_id, uint8_t duty, bool reverse) {
     ub16_t dutyScale;
     if(!reverse){
-        dutyScale = (ub16_t) map(duty, 0, 100, DUTY_CYCLE_MIN, DUTY_CYCLE_MAX);
+        dutyScale = (ub16_t) map(duty, -100, 100, DUTY_CYCLE_MIN, DUTY_CYCLE_MAX);
     }
     else{
-        dutyScale = (ub16_t) map(100-duty, 0, 100, DUTY_CYCLE_MIN, DUTY_CYCLE_MAX);
+        dutyScale = (ub16_t) map(duty, 100, -100, DUTY_CYCLE_MIN, DUTY_CYCLE_MAX);
     }
     struct pwm_info_s pwm_info;
     int ret;
