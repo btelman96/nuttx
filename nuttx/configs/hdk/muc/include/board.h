@@ -56,6 +56,11 @@
     #define GPIO_TIM5_CH4OUT GPIO_TIM5_CH4OUT_1     /* PA3 */
 #endif
 
+#ifdef CONFIG_MODS_SERVOBOT
+    #define GPIO_TIM2_CH3OUT GPIO_TIM2_CH3OUT_1     /* PA2 */
+    #define GPIO_TIM5_CH4OUT GPIO_TIM5_CH4OUT_1     /* PA3 */
+#endif
+
 /* Clocking *************************************************************************/
 
 /* HSI - 16 MHz RC factory-trimmed

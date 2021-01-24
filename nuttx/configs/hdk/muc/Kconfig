@@ -47,6 +47,14 @@ config MODS_MODBOT
 	---help---
 		Robot with dual Mindstorm EVE Large motors
 
+config MODS_SERVOBOT
+	bool "Dual 360 servo ModBot"
+	default n
+	depends on GREYBUS_RAW
+	select DEVICE_CORE
+	---help---
+		Robot with dual contiuous rotation servos
+
 config MODS_RAW_BLINKY
 	bool "Blinky LED Mods Raw support"
 	default n
