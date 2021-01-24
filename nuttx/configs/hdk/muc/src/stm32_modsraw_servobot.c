@@ -73,8 +73,7 @@ static int8_t cur_right = MOTOR_STOP;
 #define DUTY_CYCLE_MAX 5636 //1720ms roughly
 
 static bool modbot_started = false;
-int fd_left;
-int fd_right;
+static int fds[] = {0, 0};
 static int motor_config[] = {GPIO_MODBOT_SERVO_AIN, GPIO_MODBOT_SERVO_BIN};
 static int motor_duty[] = {DUTY_CYCLE_MIN, DUTY_CYCLE_MIN};
 
@@ -106,7 +105,7 @@ static int map(int value, int low1, int high1, int low2, int high2){
  *   examples/pwm.
  *
  ************************************************************************************/
-static int pwm_enable(unsigned int pwm_id, uint8_t duty, bool reverse);
+static int pwm_enable(unsigned int pwm_id, int8_t duty, bool reverse);
 static void pwm_disable(int fd);
 static int pwm_devinit(void);
 
@@ -123,9 +122,9 @@ static void modbot_stop(void)
 
         // STM32_TIM_DISABLEINT(tim_dev_left, 0);
         // stm32_tim_deinit(tim_dev_left);
-        if(fd_left){
-            pwm_disable(fd_left);
-            fd_left = 0;
+        if(fds[PWM_L]){
+            pwm_disable(fds[PWM_L]);
+            fds[PWM_L] = 0;
         }
         pwm_dev_left = NULL;
     } else {
@@ -137,9 +136,9 @@ static void modbot_stop(void)
 
         // STM32_TIM_DISABLEINT(tim_dev_left, 0);
         // stm32_tim_deinit(tim_dev_left);
-        if(fd_right){
-            pwm_disable(fd_right);
-            fd_right = 0;
+        if(fds[PWM_R]){
+            pwm_disable(fds[PWM_R]);
+            fds[PWM_R] = 0;
         }
         pwm_dev_right = NULL;
     } else {
@@ -196,29 +195,16 @@ static int modbot_recv(struct device *dev, uint32_t len, uint8_t data[])
 
     for (i = 0; i < PWM_DEVICES; i++) {
         sdata[i] = (int8_t)data[i];
-        val = abs(sdata[i]);
+        val = sdata[i];
         uval = (unsigned int)val;
         if (uval > 100) {
             uval = 100;
         }
-        if (uval != 0) {
-            motor_duty[i] = uval;
+        motor_duty[i] = uval;
+        if(fds[i]){
+            pwm_disable(fds[i]);
         }
-    }
-    dbg("Value: %d\n", uval);
-
-    if(pwm_dev_left){
-        dbg("pwm_dev_left modify\n");
-        if(fd_left)
-            pwm_disable(fd_left);
-        fd_left = pwm_enable(0, uval, false);
-    }
-
-    if(pwm_dev_right){
-        dbg("pwm_dev_right modify\n");
-        if(fd_right)
-            pwm_disable(fd_right);
-        fd_right = pwm_enable(1, uval, true);
+        fds[i] = pwm_enable(i, val, i == PWM_R);
     }
 
     if (sdata[PWM_L] != cur_left) {
@@ -358,7 +344,7 @@ int pwm_devinit(void)
  * or a negative value if an error occurred.
  * Disabling pwm is not necessary after a negative return.
  */
-static int pwm_enable(unsigned int pwm_id, uint8_t duty, bool reverse) {
+static int pwm_enable(unsigned int pwm_id, int8_t duty, bool reverse) {
     ub16_t dutyScale;
     if(!reverse){
         dutyScale = (ub16_t) map(duty, -100, 100, DUTY_CYCLE_MIN, DUTY_CYCLE_MAX);
